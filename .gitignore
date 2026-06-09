@@ -1,0 +1,17 @@
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+.coverage
+.pytest_cache/
+*.db
+.env
+.env.local
+.env.production
+*.log
+.DS_Store
+
+# Keep example env files
+!.env.example

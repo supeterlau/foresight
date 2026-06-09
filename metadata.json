@@ -1,0 +1,6 @@
+{
+  "name": "Foresight",
+  "description": "MVP for a GitLab Engineering Manager Agent analyzing Issues, Merge Requests, Commits, and Pipelines.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
