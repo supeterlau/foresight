@@ -1,5 +1,7 @@
 import os
 import json
+import sys
+import psutil
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
@@ -15,10 +17,16 @@ from .database import (
     init_db, list_repositories, get_repository, insert_repository,
     delete_repository, list_analyses, list_recommendations,
     update_recommendation_status, get_repository_by_project_id, generate_id,
+    get_conn,
 )
 from .agent import run_analysis
 
 load_dotenv()
+
+# ── 进程启动时间（用于计算 uptime）───────────────────
+import time as time_module
+PROCESS_START_TIME = time_module.monotonic()
+APP_START_TIME = datetime.now(timezone.utc).isoformat()
 
 
 @asynccontextmanager
@@ -29,6 +37,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Foresight EM Agent API", lifespan=lifespan)
 
+# 生产环境同源部署（Caddy 代理），无需 CORS
+# 仅在本地开发（Vite :5173 → Python :8081）时需要
+# 通过 CORS_ORIGINS 环境变量配置，默认允许本地开发
 origins_str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
 allowed_origins = [o.strip() for o in origins_str.split(",") if o.strip()]
 
@@ -133,7 +144,116 @@ setTimeout(function(){{window.close()}},1200)}}else{{window.location.href='/'}}
 
 @app.get("/api/health")
 def health():
-    return {"status": "healthy", "service": "Foresight ADK EM Server"}
+    """
+    增强型健康检查端点。
+    被 Render 用作 healthCheckPath，需返回 200 表示健康。
+    提供详细的系统、数据库和代理诊断信息。
+    """
+    import requests as http_requests
+
+    health_info = {
+        "status": "healthy",
+        "service": "Foresight EM Agent",
+        "version": "2.0-single-instance",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # ── 1. 系统信息 ───────────────────────────────────────
+    uptime_seconds = int(time_module.monotonic() - PROCESS_START_TIME)
+    proc = psutil.Process()
+    mem_info = proc.memory_info()
+    cpu_percent = proc.cpu_percent(interval=0)  # interval=0 非阻塞
+
+    health_info["system"] = {
+        "uptime_seconds": uptime_seconds,
+        "uptime_human": f"{uptime_seconds // 3600}h {(uptime_seconds % 3600) // 60}m {uptime_seconds % 60}s",
+        "app_start_time": APP_START_TIME,
+        "process": {
+            "pid": os.getpid(),
+            "memory_rss_bytes": mem_info.rss,
+            "memory_rss_mb": round(mem_info.rss / 1024 / 1024, 2),
+            "cpu_percent": cpu_percent,
+            "open_files": len(proc.open_files()),
+            "threads": proc.num_threads(),
+        },
+        "host": {
+            "hostname": os.uname().nodename,
+            "platform": os.uname().sysname,
+            "python_version": sys.version.split()[0],
+        },
+    }
+
+    # ── 2. 数据库状态 ─────────────────────────────────────
+    db_ok = False
+    db_tables = []
+    db_error = None
+    repo_count = 0
+    analysis_count = 0
+    try:
+        conn = get_conn()
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        ).fetchall()
+        db_tables = [r["name"] for r in rows]
+        repo_count = conn.execute("SELECT COUNT(*) as cnt FROM repositories").fetchone()["cnt"]
+        analysis_count = conn.execute("SELECT COUNT(*) as cnt FROM analyses").fetchone()["cnt"]
+        conn.close()
+        db_ok = True
+    except Exception as e:
+        db_error = str(e)
+
+    health_info["database"] = {
+        "status": "connected" if db_ok else "error",
+        "tables": db_tables,
+        "record_counts": {
+            "repositories": repo_count,
+            "analyses": analysis_count,
+        },
+        "error": db_error,
+    }
+
+    # ── 3. 反向代理（Caddy）状态 ───────────────────────────
+    caddy_ok = False
+    caddy_error = None
+    try:
+        # Caddy admin API: GET /config/ 返回 200，GET / 在新版中返回 404
+        caddy_resp = http_requests.get("http://localhost:2019/config/", timeout=2)
+        caddy_ok = caddy_resp.status_code == 200
+        if not caddy_ok:
+            caddy_error = f"Caddy admin API returned status {caddy_resp.status_code}"
+    except http_requests.exceptions.ConnectionError:
+        caddy_error = "Caddy admin API not reachable (localhost:2019)"
+    except Exception as e:
+        caddy_error = str(e)
+
+    health_info["proxy"] = {
+        "service": "Caddy",
+        "status": "running" if caddy_ok else "error",
+        "admin_api": "http://localhost:2019/",
+        "error": caddy_error,
+    }
+
+    # ── 4. GitLab 集成状态 ────────────────────────────────
+    gitlab_client_id = os.getenv("GITLAB_CLIENT_ID", "")
+    gitlab_private_token = os.getenv("GITLAB_PRIVATE_TOKEN", "")
+    health_info["gitlab"] = {
+        "oauth_configured": bool(gitlab_client_id),
+        "private_token_configured": bool(gitlab_private_token),
+        "client_id_prefix": gitlab_client_id[:8] + "..." if gitlab_client_id else None,
+    }
+
+    # ── 整体健康状态判定 ──────────────────────────────────
+    all_ok = db_ok and caddy_ok
+    if not all_ok:
+        health_info["status"] = "degraded"
+        issues = []
+        if not db_ok:
+            issues.append("database_unreachable")
+        if not caddy_ok:
+            issues.append("proxy_unreachable")
+        health_info["issues"] = issues
+
+    return health_info
 
 
 @app.get("/api/config")

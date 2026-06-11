@@ -1,30 +1,17 @@
 services:
+  # ─── 单实例服务：Caddy 反向代理 + Python 后端 ─────────────
   - type: web
-    name: foresight-backend
+    name: foresight
     runtime: docker
     repo: https://github.com/supeterlau/gh-peter
-    rootDir: backend
     region: oregon
     plan: free
-    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
     envVars:
-      - key: CORS_ORIGINS
-        value: https://foresight-frontend.onrender.com
       - key: GITLAB_CLIENT_ID
         sync: false
       - key: GITLAB_CLIENT_SECRET
         sync: false
       - key: GITLAB_PRIVATE_TOKEN
         sync: false
-
-  - type: web
-    name: foresight-frontend
-    runtime: static
-    repo: https://github.com/supeterlau/gh-peter
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
-    pullRequestPreviewsEnabled: true
-    envVars:
-      - key: VITE_API_URL
-        value: https://foresight-backend.onrender.com
+      # 不再需要 CORS_ORIGINS 和 VITE_API_URL —— 同源部署

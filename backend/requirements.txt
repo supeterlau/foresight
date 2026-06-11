@@ -6,3 +6,4 @@ python-dotenv>=1.2.0
 requests>=2.31.0
 httpx>=0.28.0
 mcp>=1.27.0
+psutil>=6.0.0

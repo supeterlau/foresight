@@ -1,0 +1,24 @@
+# Foresight EM Agent - Caddy Reverse Proxy Config
+# Render handles SSL termination, so Caddy uses HTTP internally
+
+:{$PORT} {
+
+    # Compress responses
+    encode gzip
+
+    # Route /api/* to Python FastAPI backend
+    handle /api/* {
+        reverse_proxy localhost:8081 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # Serve static frontend SPA with fallback
+    handle {
+        root * /app/frontend/dist
+        try_files {path} /index.html
+        file_server
+    }
+
+}
