@@ -51,7 +51,7 @@ COPY entrypoint.sh exit_on_crash.py /app/
 RUN chmod +x /app/entrypoint.sh /app/exit_on_crash.py
 
 # Render 通过 PORT 环境变量指定端口
-EXPOSE 8080
+EXPOSE 7860
 
 # ── 启动入口 ────────────────────────────────────────
 # Supervisor 前台运行，管理所有子进程

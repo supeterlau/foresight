@@ -18,11 +18,11 @@ mkdir -p /var/log/supervisor
 
 echo "[entrypoint] Starting Foresight EM Agent..."
 echo "[entrypoint] Backend: uvicorn api.server:app on 127.0.0.1:8081"
-echo "[entrypoint] Proxy:   Caddy on :${PORT:-8080}"
+echo "[entrypoint] Proxy:   Caddy on :${PORT:-7860}"
 echo "[entrypoint] Frontend: serving static files from /app/frontend/dist"
 
 # 将 PORT 注入 Caddy 环境变量（Caddyfile 使用 $PORT）
-export PORT="${PORT:-8080}"
+export PORT="${PORT:-7860}"
 
 # 前台启动 supervisord（nodaemon=true）
 # supervisord 退出时，整个容器退出
