@@ -3,7 +3,7 @@ services:
   - type: web
     name: foresight
     runtime: docker
-    repo: https://github.com/supeterlau/gh-peter
+    repo: https://github.com/supeterlau/foresight
     region: oregon
     plan: free
     healthCheckPath: /api/health
